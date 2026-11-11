@@ -71,9 +71,9 @@ app.get('/api/test-curl', async (req, res) => {
   const tests = {};
   
   const cmds = [
-    { name: 'ipv4-clean', cmd: `curl -4 -I -s -H "Referer: https://123moviesfree.club/" -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "${url}"` },
-    { name: 'ipv6-clean', cmd: `curl -6 -I -s -H "Referer: https://123moviesfree.club/" -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "${url}"` },
+    { name: 'http1.1-ipv4', cmd: `curl -4 --http1.1 -I -s -H "Referer: https://123moviesfree.club/" -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "${url}"` },
     { name: 'http2-ipv4', cmd: `curl -4 --http2 -I -s -H "Referer: https://123moviesfree.club/" -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "${url}"` },
+    { name: 'exoplayer-ipv4', cmd: `curl -4 --http1.1 -I -s -H "User-Agent: ExoPlayerLib/2.19.1" "${url}"` },
     { name: 'default-curl', cmd: `curl -I -s -H "Referer: https://123moviesfree.club/" -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "${url}"` },
   ];
 
