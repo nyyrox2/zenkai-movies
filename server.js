@@ -203,10 +203,11 @@ app.get('*', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3001;
+const HOST = '0.0.0.0';
 
-// Only listen if executed directly
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  app.listen(PORT, () => {
-    console.log(`🎬 Zenkai Movies Server & Proxy listening on http://localhost:${PORT}`);
+// Listen on all interfaces (0.0.0.0) for Railway / Docker / Cloud environments
+if (!process.env.VERCEL) {
+  app.listen(PORT, HOST, () => {
+    console.log(`🎬 Zenkai Movies Server & Proxy listening on http://${HOST}:${PORT}`);
   });
 }
