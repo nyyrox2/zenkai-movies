@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { resolveMovieBoxStream } from './lib/moviebox.js';
+import { resolveMovieBoxStream, searchMovieBox, bootstrapToken } from './lib/moviebox.js';
 import { fetchFromTmdb } from './lib/tmdb.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -26,6 +26,25 @@ app.get('/api/health', (req, res) => {
     service: 'Zenkai Stream & MovieBox Hub',
     timestamp: new Date().toISOString()
   });
+});
+
+app.get('/api/test-auth', async (req, res) => {
+  try {
+    const token = await bootstrapToken();
+    res.json({ success: true, token: token ? `${token.slice(0, 10)}...` : null });
+  } catch (err) {
+    res.json({ success: false, error: err.message, stack: err.stack });
+  }
+});
+
+app.get('/api/search', async (req, res) => {
+  const q = req.query.q || req.query.keyword || 'Avatar';
+  try {
+    const list = await searchMovieBox(q);
+    res.json({ success: true, count: list.length, list });
+  } catch (err) {
+    res.json({ success: false, error: err.message, stack: err.stack });
+  }
 });
 
 // Helper: Embed Servers Generator
