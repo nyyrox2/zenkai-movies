@@ -297,6 +297,8 @@ app.get('/proxy', async (req, res) => {
       method: req.method === 'HEAD' ? 'HEAD' : 'GET',
       headers: h,
       family: 4, // CRITICAL: Force IPv4 to prevent 426 NAT64 blocks on Alibaba/Tengine CDN
+      autoSelectFamily: false,
+      lookup: (hostname, opts, cb) => dns.lookup(hostname, { family: 4 }, cb),
       timeout: 15000,
     };
 
@@ -304,13 +306,15 @@ app.get('/proxy', async (req, res) => {
       // Retry once if CDN returns restriction (429, 428, 426, 403)
       if (!isRetry && (upstreamRes.statusCode === 429 || upstreamRes.statusCode === 428 || upstreamRes.statusCode === 426 || upstreamRes.statusCode === 403)) {
         upstreamRes.resume();
-        const altHeaders = { 'Accept': '*/*' };
+        const altHeaders = { ...h };
         if (range) altHeaders['Range'] = range;
-        if (h['Referer']) {
-          altHeaders['User-Agent'] = 'ExoPlayerLib/2.19.1';
-        } else {
+        if (isWebMirrorCdn) {
           altHeaders['Referer'] = req.query.referer || 'https://123moviesfree.club/';
           altHeaders['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+        } else if (isDirectAppCdn) {
+          altHeaders['User-Agent'] = 'ExoPlayerLib/2.19.1';
+          delete altHeaders['Referer'];
+          delete altHeaders['Origin'];
         }
         return doRequest(altHeaders, true);
       }
