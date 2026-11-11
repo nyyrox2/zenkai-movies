@@ -31,9 +31,35 @@ app.use(express.json());
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
+    version: 'e499cc0-v2',
     service: 'Zenkai Stream & MovieBox Hub',
     timestamp: new Date().toISOString()
   });
+});
+
+app.get('/api/test-direct-stream', (req, res) => {
+  const url = req.query.url || 'https://bcdnxw.hakunaymatata.com/resource/ede9417949c0c4b9af6d8787769d11ba.mp4?sign=83ba87493e5e80d91e6b57be0bc92ec8&t=1794404210';
+  try {
+    const u = new URL(url);
+    const upstreamReq = https.request(u, {
+      method: 'HEAD',
+      family: 4,
+      headers: {
+        'Accept': '*/*',
+        'Referer': 'https://123moviesfree.club/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      }
+    }, (upstreamRes) => {
+      res.json({
+        status: upstreamRes.statusCode,
+        headers: upstreamRes.headers
+      });
+    });
+    upstreamReq.on('error', (err) => res.json({ error: err.message }));
+    upstreamReq.end();
+  } catch (err) {
+    res.json({ error: err.message });
+  }
 });
 
 app.get('/api/test-auth', async (req, res) => {
