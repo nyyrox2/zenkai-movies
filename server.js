@@ -67,8 +67,9 @@ app.get('/api/test-direct-stream', (req, res) => {
 
 app.get('/api/test-curl', async (req, res) => {
   const url = req.query.url || 'https://bcdnxw.hakunaymatata.com/resource/ede9417949c0c4b9af6d8787769d11ba.mp4?sign=91ff19a599713fb6dd1dacb3e8c875f7&t=1794408014';
+  const ip = req.query.ip || '103.211.230.1';
   try {
-    const cmd = `curl -I -s -H "Referer: https://123moviesfree.club/" -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "${url}"`;
+    const cmd = `curl --http1.1 -I -s -H "Referer: https://123moviesfree.club/" -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -H "X-Forwarded-For: ${ip}" -H "X-Real-IP: ${ip}" -H "CF-Connecting-IP: ${ip}" -H "Client-IP: ${ip}" "${url}"`;
     const { stdout, stderr } = await execPromise(cmd);
     res.json({ cmd, stdout, stderr });
   } catch (err) {
