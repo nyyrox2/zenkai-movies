@@ -1,9 +1,17 @@
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
+import http from 'node:http';
+import https from 'node:https';
+import dns from 'node:dns';
 import { fileURLToPath } from 'url';
 import { resolveMovieBoxStream, searchMovieBox, bootstrapToken } from './lib/moviebox.js';
 import { fetchFromTmdb } from './lib/tmdb.js';
+
+// Prioritize IPv4 across the process to prevent NAT64 / IPv6 blocks (e.g. Tengine 426)
+if (dns.setDefaultResultOrder) {
+  dns.setDefaultResultOrder('ipv4first');
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -229,63 +237,74 @@ app.get('/proxy', async (req, res) => {
   const range = req.headers.range;
   if (range) headers['Range'] = range;
 
-  try {
-    let up = await fetch(targetUrl, { headers });
+  const client = urlObj.protocol === 'http:' ? http : https;
 
-    // Automatic fallback retry for CDN restrictions (429, 428, 403, etc.)
-    if (!up.ok && up.status !== 206) {
-      const altHeaders = { 'Accept': '*/*' };
-      if (range) altHeaders['Range'] = range;
-
-      if (headers['Referer']) {
-        // Was web mirror -> retry with direct app profile (ExoPlayer, no referer)
-        altHeaders['User-Agent'] = 'ExoPlayerLib/2.19.1';
-      } else {
-        // Was direct app -> retry with web mirror profile (Referer + Chrome UA)
-        altHeaders['Referer'] = req.query.referer || 'https://123moviesfree.club/';
-        altHeaders['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-      }
-
-      try {
-        const retryUp = await fetch(targetUrl, { headers: altHeaders });
-        if (retryUp.ok || retryUp.status === 206) {
-          up = retryUp;
-        }
-      } catch {}
-    }
-
-    const contentType = up.headers.get('content-type') || 'video/mp4';
-    const contentLength = up.headers.get('content-length');
-    const contentRange = up.headers.get('content-range');
-    const acceptRanges = up.headers.get('accept-ranges') || 'bytes';
-
-    const responseHeaders = {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
-      'Access-Control-Allow-Headers': '*',
-      'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Content-Type, Accept-Ranges, ETag, Last-Modified',
-      'Accept-Ranges': acceptRanges,
-      'Content-Type': contentType,
-      'Connection': 'keep-alive'
+  const doRequest = (h, isRetry = false) => {
+    const reqOptions = {
+      method: req.method === 'HEAD' ? 'HEAD' : 'GET',
+      headers: h,
+      family: 4, // CRITICAL: Force IPv4 to prevent 426 NAT64 blocks on Alibaba/Tengine CDN
+      timeout: 15000,
     };
 
-    if (contentLength) responseHeaders['Content-Length'] = contentLength;
-    if (contentRange) responseHeaders['Content-Range'] = contentRange;
+    const upstreamReq = client.request(urlObj, reqOptions, (upstreamRes) => {
+      // Retry once if CDN returns restriction (429, 428, 426, 403)
+      if (!isRetry && (upstreamRes.statusCode === 429 || upstreamRes.statusCode === 428 || upstreamRes.statusCode === 426 || upstreamRes.statusCode === 403)) {
+        upstreamRes.resume();
+        const altHeaders = { 'Accept': '*/*' };
+        if (range) altHeaders['Range'] = range;
+        if (h['Referer']) {
+          altHeaders['User-Agent'] = 'ExoPlayerLib/2.19.1';
+        } else {
+          altHeaders['Referer'] = req.query.referer || 'https://123moviesfree.club/';
+          altHeaders['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+        }
+        return doRequest(altHeaders, true);
+      }
 
-    res.writeHead(up.status, responseHeaders);
+      const responseHeaders = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+        'Access-Control-Allow-Headers': '*',
+        'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Content-Type, Accept-Ranges, ETag, Last-Modified',
+        'Accept-Ranges': upstreamRes.headers['accept-ranges'] || 'bytes',
+        'Content-Type': upstreamRes.headers['content-type'] || 'video/mp4',
+        'Connection': 'keep-alive',
+      };
+      if (upstreamRes.headers['content-length']) responseHeaders['Content-Length'] = upstreamRes.headers['content-length'];
+      if (upstreamRes.headers['content-range']) responseHeaders['Content-Range'] = upstreamRes.headers['content-range'];
+      if (upstreamRes.headers['etag']) responseHeaders['ETag'] = upstreamRes.headers['etag'];
+      if (upstreamRes.headers['last-modified']) responseHeaders['Last-Modified'] = upstreamRes.headers['last-modified'];
 
-    const reader = up.body.getReader();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      res.write(value);
-    }
-    res.end();
-  } catch (err) {
-    if (!res.headersSent) {
-      res.status(200).json({ error: `Proxy fetch failed: ${err.message}` });
-    }
-  }
+      res.writeHead(upstreamRes.statusCode, responseHeaders);
+      if (req.method === 'HEAD') {
+        upstreamRes.resume();
+        return res.end();
+      }
+      upstreamRes.pipe(res);
+    });
+
+    upstreamReq.on('error', (err) => {
+      if (!res.headersSent) {
+        res.status(502).json({ error: `Proxy connection error: ${err.message}` });
+      }
+    });
+
+    upstreamReq.on('timeout', () => {
+      upstreamReq.destroy();
+      if (!res.headersSent) {
+        res.status(504).json({ error: 'Proxy upstream timeout' });
+      }
+    });
+
+    res.on('close', () => {
+      upstreamReq.destroy();
+    });
+
+    upstreamReq.end();
+  };
+
+  doRequest(headers);
 });
 
 // Serve frontend static build if running standalone
