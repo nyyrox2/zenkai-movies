@@ -66,15 +66,27 @@ app.get('/api/test-direct-stream', (req, res) => {
 });
 
 app.get('/api/test-curl', async (req, res) => {
-  const url = req.query.url || 'https://bcdnxw.hakunaymatata.com/resource/ede9417949c0c4b9af6d8787769d11ba.mp4?sign=91ff19a599713fb6dd1dacb3e8c875f7&t=1794408014';
-  const ip = req.query.ip || '103.211.230.1';
-  try {
-    const cmd = `curl --http1.1 -I -s -H "Referer: https://123moviesfree.club/" -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -H "X-Forwarded-For: ${ip}" -H "X-Real-IP: ${ip}" -H "CF-Connecting-IP: ${ip}" -H "Client-IP: ${ip}" "${url}"`;
-    const { stdout, stderr } = await execPromise(cmd);
-    res.json({ cmd, stdout, stderr });
-  } catch (err) {
-    res.json({ error: err.message, stdout: err.stdout, stderr: err.stderr });
+  const url = req.query.url || 'https://bcdnxw.hakunaymatata.com/resource/7d5defb49a8c28939f672dea60dbe0db.mp4?sign=755b40adc0959242e8b27afc89ab794c&t=1794409187';
+  const customCmd = req.query.cmd;
+  const tests = {};
+  
+  const cmds = [
+    { name: 'ipv4-clean', cmd: `curl -4 -I -s -H "Referer: https://123moviesfree.club/" -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "${url}"` },
+    { name: 'ipv6-clean', cmd: `curl -6 -I -s -H "Referer: https://123moviesfree.club/" -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "${url}"` },
+    { name: 'http2-ipv4', cmd: `curl -4 --http2 -I -s -H "Referer: https://123moviesfree.club/" -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "${url}"` },
+    { name: 'default-curl', cmd: `curl -I -s -H "Referer: https://123moviesfree.club/" -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "${url}"` },
+  ];
+
+  for (const t of cmds) {
+    try {
+      const { stdout, stderr } = await execPromise(t.cmd);
+      tests[t.name] = { stdout: stdout.trim(), stderr: stderr.trim() };
+    } catch (err) {
+      tests[t.name] = { error: err.message, stdout: err.stdout, stderr: err.stderr };
+    }
   }
+
+  res.json({ url, tests });
 });
 
 app.get('/api/test-auth', async (req, res) => {
