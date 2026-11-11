@@ -37,6 +37,35 @@ app.get('/api/test-auth', async (req, res) => {
   }
 });
 
+app.get('/api/test-proxy-cdn', async (req, res) => {
+  const targetUrl = req.query.url || 'https://bcdnxw.hakunaymatata.com/resource/ede9417949c0c4b9af6d8787769d11ba.mp4?sign=27029aaf90a2266163016fabdfd369d3&t=1794405444';
+  const tests = {};
+  
+  const headersList = [
+    { name: 'no-headers', h: {} },
+    { name: 'referer-only', h: { 'Referer': 'https://123moviesfree.club/' } },
+    { name: 'referer-and-ua', h: { 'Referer': 'https://123moviesfree.club/', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' } },
+    { name: 'referer-and-ua-and-range', h: { 'Referer': 'https://123moviesfree.club/', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36', 'Range': 'bytes=0-100' } },
+    { name: 'exoplayer', h: { 'User-Agent': 'ExoPlayerLib/2.19.1' } }
+  ];
+
+  for (const t of headersList) {
+    try {
+      const resp = await fetch(targetUrl, { headers: t.h });
+      tests[t.name] = {
+        status: resp.status,
+        statusText: resp.statusText,
+        headers: Object.fromEntries(resp.headers.entries()),
+        body: !resp.ok ? (await resp.text()).slice(0, 200) : null
+      };
+    } catch (err) {
+      tests[t.name] = { error: err.message };
+    }
+  }
+
+  res.json({ targetUrl, tests });
+});
+
 // Search: support both MovieBox direct search and TMDB catalogue search
 app.get('/api/search', async (req, res) => {
   const q = req.query.q || req.query.keyword || 'Avatar';
