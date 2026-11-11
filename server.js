@@ -90,10 +90,7 @@ app.get('/api/movies/stream', async (req, res) => {
     return res.status(400).json({ error: 'Missing required parameter: tmdbId or title' });
   }
 
-  const hostUrl = `https://${req.get('host') || 'zenkai-movies-production.up.railway.app'}`;
-  const railwayProxy = `${hostUrl}/proxy?url=`;
-  const lovableProxy = `https://webpage-launchpad.lovable.app/api/public/proxy?url=${encodeURIComponent(railwayProxy)}`;
-  const proxyBase = req.query.proxyBase || lovableProxy;
+  const proxyBase = req.query.proxyBase || 'https://webpage-launchpad.lovable.app/api/public/proxy';
 
   try {
     const movieResult = await resolveMovieBoxStream({
