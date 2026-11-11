@@ -4,6 +4,9 @@ import path from 'path';
 import http from 'node:http';
 import https from 'node:https';
 import dns from 'node:dns';
+import { exec } from 'node:child_process';
+import util from 'node:util';
+const execPromise = util.promisify(exec);
 import { fileURLToPath } from 'url';
 import { resolveMovieBoxStream, searchMovieBox, bootstrapToken } from './lib/moviebox.js';
 import { fetchFromTmdb } from './lib/tmdb.js';
@@ -31,7 +34,7 @@ app.use(express.json());
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
-    version: 'e499cc0-v2',
+    version: 'v3-curl',
     service: 'Zenkai Stream & MovieBox Hub',
     timestamp: new Date().toISOString()
   });
@@ -59,6 +62,17 @@ app.get('/api/test-direct-stream', (req, res) => {
     upstreamReq.end();
   } catch (err) {
     res.json({ error: err.message });
+  }
+});
+
+app.get('/api/test-curl', async (req, res) => {
+  const url = req.query.url || 'https://bcdnxw.hakunaymatata.com/resource/ede9417949c0c4b9af6d8787769d11ba.mp4?sign=91ff19a599713fb6dd1dacb3e8c875f7&t=1794408014';
+  try {
+    const cmd = `curl -I -s -H "Referer: https://123moviesfree.club/" -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "${url}"`;
+    const { stdout, stderr } = await execPromise(cmd);
+    res.json({ cmd, stdout, stderr });
+  } catch (err) {
+    res.json({ error: err.message, stdout: err.stdout, stderr: err.stderr });
   }
 });
 
