@@ -178,21 +178,23 @@ app.get('/proxy', async (req, res) => {
   }
 
   const host = urlObj.hostname.toLowerCase();
-  const isDirectAppCdn = host.includes('aoneroom') || host.includes('hakunaymatata');
-  const isWebMirrorCdn = host.includes('bcdnxw') || host.includes('123moviesfree') || host.includes('sflix');
+  const isWebMirrorCdn = host.includes('bcdnxw') || host.includes('123moviesfree') || host.includes('sflix') || !!req.query.referer;
+  const isDirectAppCdn = !isWebMirrorCdn && (host.includes('aoneroom') || host.includes('hakunaymatata'));
 
   const headers = { 'Accept': '*/*' };
 
-  if (isDirectAppCdn) {
-    // CRITICAL: MovieBox hakunaymatata CDN strictly blocks Mobile Chrome UA with HTTP 428 and blocks Referer with HTTP 429!
+  if (isWebMirrorCdn) {
+    // Web mirror CDNs (such as bcdnxw for TV series & specific dubs) require partner Referer
+    headers['Referer'] = req.query.referer || 'https://123moviesfree.club/';
+    headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+  } else if (isDirectAppCdn) {
+    // CRITICAL: MovieBox direct app CDNs strictly block Mobile Chrome UA with HTTP 428 and block Referer with HTTP 429!
     // Using ExoPlayer UA with no Referer/Origin guarantees clean HTTP 206 Partial Content.
     headers['User-Agent'] = 'ExoPlayerLib/2.19.1';
-  } else if (isWebMirrorCdn) {
-    headers['Referer'] = req.query.referer || 'https://123moviesfree.club/';
-    headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
   } else {
     if (req.query.referer) headers['Referer'] = req.query.referer;
     if (req.headers['user-agent']) headers['User-Agent'] = req.headers['user-agent'];
+    else headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
   }
 
   const range = req.headers.range;
@@ -201,17 +203,26 @@ app.get('/proxy', async (req, res) => {
   try {
     let up = await fetch(targetUrl, { headers });
 
-    // Automatic fallback retry for CDN restrictions
-    if ((up.status === 429 || up.status === 428 || up.status === 403) && isDirectAppCdn) {
-      const retryHeaders = {
-        'Accept': '*/*',
-        'User-Agent': 'ExoPlayerLib/2.19.1'
-      };
-      if (range) retryHeaders['Range'] = range;
-      const retryUp = await fetch(targetUrl, { headers: retryHeaders });
-      if (retryUp.ok || retryUp.status === 206) {
-        up = retryUp;
+    // Automatic fallback retry for CDN restrictions (429, 428, 403, etc.)
+    if (!up.ok && up.status !== 206) {
+      const altHeaders = { 'Accept': '*/*' };
+      if (range) altHeaders['Range'] = range;
+
+      if (headers['Referer']) {
+        // Was web mirror -> retry with direct app profile (ExoPlayer, no referer)
+        altHeaders['User-Agent'] = 'ExoPlayerLib/2.19.1';
+      } else {
+        // Was direct app -> retry with web mirror profile (Referer + Chrome UA)
+        altHeaders['Referer'] = req.query.referer || 'https://123moviesfree.club/';
+        altHeaders['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
       }
+
+      try {
+        const retryUp = await fetch(targetUrl, { headers: altHeaders });
+        if (retryUp.ok || retryUp.status === 206) {
+          up = retryUp;
+        }
+      } catch {}
     }
 
     const contentType = up.headers.get('content-type') || 'video/mp4';
