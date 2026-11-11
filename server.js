@@ -37,9 +37,16 @@ app.get('/api/test-auth', async (req, res) => {
   }
 });
 
+// Search: support both MovieBox direct search and TMDB catalogue search
 app.get('/api/search', async (req, res) => {
   const q = req.query.q || req.query.keyword || 'Avatar';
+  const source = req.query.source || req.query.provider || 'moviebox';
   try {
+    if (source === 'tmdb') {
+      const type = req.query.type || 'multi';
+      const data = await fetchFromTmdb(`search/${type}`, { query: q });
+      return res.json(data || { results: [] });
+    }
     const list = await searchMovieBox(q);
     res.json({ success: true, count: list.length, list });
   } catch (err) {
@@ -83,8 +90,10 @@ app.get('/api/movies/stream', async (req, res) => {
     return res.status(400).json({ error: 'Missing required parameter: tmdbId or title' });
   }
 
-  const hostUrl = `${req.protocol}://${req.get('host')}`;
-  const proxyBase = `${hostUrl}/proxy`;
+  const hostUrl = `https://${req.get('host') || 'zenkai-movies-production.up.railway.app'}`;
+  const railwayProxy = `${hostUrl}/proxy?url=`;
+  const lovableProxy = `https://webpage-launchpad.lovable.app/api/public/proxy?url=${encodeURIComponent(railwayProxy)}`;
+  const proxyBase = req.query.proxyBase || lovableProxy;
 
   try {
     const movieResult = await resolveMovieBoxStream({
@@ -117,12 +126,12 @@ app.get('/api/movies/stream', async (req, res) => {
 });
 
 // ── TMDB Passthrough Endpoints ──
-// GET /api/movies/trending, /api/movies/popular, /api/movies/discover, /api/movies/:type/:id
+// GET /api/movies/trending, /api/movies/popular, /api/movies/discover, /api/movies/search/multi, /api/movies/:type/:id
 app.get('/api/movies/*', async (req, res) => {
   const sub = req.params[0] || '';
   const params = { ...req.query };
   const data = await fetchFromTmdb(sub, params);
-  if (!data) return res.status(502).json({ error: 'Failed to retrieve data from TMDB' });
+  if (!data) return res.status(200).json({ results: [], error: 'Failed to retrieve data from TMDB' });
   res.json(data);
 });
 
@@ -205,7 +214,7 @@ app.get('/proxy', async (req, res) => {
     res.end();
   } catch (err) {
     if (!res.headersSent) {
-      res.status(502).json({ error: `Proxy fetch failed: ${err.message}` });
+      res.status(200).json({ error: `Proxy fetch failed: ${err.message}` });
     }
   }
 });
