@@ -1,4 +1,5 @@
-const API_BASE = '/api/movies';
+const SERVICE_BASE = (import.meta.env.VITE_MOVIEBOX_PROXY_URL || '').replace(/\/+$/, '');
+const API_BASE = `${SERVICE_BASE}/api/movies`;
 
 export async function fetchTrending(type = 'movie', timeWindow = 'week') {
   try {
