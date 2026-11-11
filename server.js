@@ -111,7 +111,39 @@ app.get('/api/movies/stream', async (req, res) => {
       embedServers
     });
   } catch (err) {
-    console.error(`MovieBox stream resolve error for "${title}":`, err.message);
+    console.warn(`MovieBox stream local resolve error for "${title}":`, err.message);
+    try {
+      const qs = new URLSearchParams({
+        id: String(tmdbId || 0),
+        type,
+        s: String(season),
+        e: String(episode),
+        ...(title ? { title } : {}),
+        ...(year ? { year } : {}),
+        ...(dubId ? { dub: dubId } : {}),
+        ...(imdbId ? { imdb: imdbId } : {}),
+        no_midman: '1'
+      });
+      const cfResp = await fetch(`https://zenkai.cfd/api/movies/stream?${qs.toString()}`, {
+        headers: {
+          'Accept': 'application/json',
+          'X-Zenkai-Barrier': 'zenkai-barrier-apk-2026-v1'
+        },
+        signal: AbortSignal.timeout(8000)
+      });
+      if (cfResp.ok) {
+        const cfData = await cfResp.json().catch(() => null);
+        if (cfData && cfData.success && cfData.streams?.length > 0) {
+          const embedServers = getEmbedServers(tmdbId, type, season, episode);
+          return res.json({
+            ...cfData,
+            embedServers
+          });
+        }
+      }
+    } catch (cfErr) {
+      console.warn(`Zenkai edge fallback failed:`, cfErr.message);
+    }
     const embedServers = getEmbedServers(tmdbId, type, season, episode);
     return res.status(200).json({
       success: false,
