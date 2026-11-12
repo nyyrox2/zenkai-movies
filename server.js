@@ -174,6 +174,68 @@ function getEmbedServers(tmdbId, type = 'movie', season = 1, episode = 1) {
   ];
 }
 
+
+const OPENSUBS = 'https://opensubtitles-v3.strem.io/subtitles';
+const LANGS = {
+  eng: 'English', spa: 'Spanish', fre: 'French', fra: 'French', ger: 'German', deu: 'German',
+  ita: 'Italian', por: 'Portuguese', pob: 'Portuguese (BR)', ara: 'Arabic', rus: 'Russian',
+  hin: 'Hindi', jpn: 'Japanese', chi: 'Chinese', zho: 'Chinese', ind: 'Indonesian', tha: 'Thai',
+  vie: 'Vietnamese', kor: 'Korean', tur: 'Turkish', pol: 'Polish', dut: 'Dutch', nld: 'Dutch',
+  mal: 'Malayalam', ben: 'Bengali', tam: 'Tamil', tel: 'Telugu'
+};
+
+async function fetchMovieSubtitles({ tmdbId, type, season = 1, episode = 1, imdbId = null, proxyBase = '' }) {
+  let effectiveImdb = imdbId;
+  if (!effectiveImdb && tmdbId) {
+    try {
+      const tmdbData = await fetchFromTmdb(`${type}/${tmdbId}`, { append_to_response: 'external_ids' });
+      effectiveImdb = tmdbData?.external_ids?.imdb_id || tmdbData?.imdb_id;
+    } catch {}
+  }
+  if (!effectiveImdb) return [];
+
+  try {
+    const osUrl = type === 'movie'
+      ? `${OPENSUBS}/movie/${effectiveImdb}.json`
+      : `${OPENSUBS}/series/${effectiveImdb}:${season}:${episode}.json`;
+    const res = await fetch(osUrl, { signal: AbortSignal.timeout(6000) });
+    if (!res.ok) return [];
+    const data = await res.json().catch(() => null);
+    const count = {};
+    return (data?.subtitles || []).slice(0, 60).map((s, i) => {
+      const language = LANGS[s.lang] || (s.lang ? s.lang[0].toUpperCase() + s.lang.slice(1) : 'English');
+      count[language] = (count[language] || 0) + 1;
+      const directUrl = s.url;
+      const proxiedUrl = proxyBase ? `${proxyBase}?url=${encodeURIComponent(directUrl)}&referer=${encodeURIComponent('https://opensubtitles.org/')}` : directUrl;
+      return {
+        id: s.id || `os_${i}`,
+        label: count[language] > 1 ? `${language} #${count[language]}` : language,
+        language,
+        lang: s.lang,
+        url: proxiedUrl,
+        rawUrl: directUrl,
+        source: 'OpenSubtitles'
+      };
+    });
+  } catch (e) {
+    console.warn(`[OpenSubtitles] Error fetching for ${effectiveImdb}:`, e.message);
+    return [];
+  }
+}
+
+// ── Subtitles Endpoint ──
+app.get('/api/movies/subtitles', async (req, res) => {
+  const tmdbId = parseInt(req.query.id || req.query.tmdbId || '0', 10);
+  const type = (req.query.type || 'movie').toLowerCase() === 'tv' ? 'tv' : 'movie';
+  const season = parseInt(req.query.s || req.query.season || '1', 10) || 1;
+  const episode = parseInt(req.query.e || req.query.episode || '1', 10) || 1;
+  const imdbId = req.query.imdb || req.query.imdbId || null;
+  const proxyBase = req.query.proxyBase || 'https://webpage-launchpad.lovable.app/api/public/proxy';
+
+  const subtitles = await fetchMovieSubtitles({ tmdbId, type, season, episode, imdbId, proxyBase });
+  res.json({ success: true, subtitles });
+});
+
 // ── MovieBox Stream Endpoint ──
 // GET /api/movies/stream?id=...&type=movie|tv&s=1&e=1&title=...&year=...&dub=...
 app.get('/api/movies/stream', async (req, res) => {
@@ -193,25 +255,30 @@ app.get('/api/movies/stream', async (req, res) => {
   const proxyBase = req.query.proxyBase || 'https://webpage-launchpad.lovable.app/api/public/proxy';
 
   try {
-    const movieResult = await resolveMovieBoxStream({
-      tmdbId,
-      type,
-      season,
-      episode,
-      title,
-      year,
-      dubId,
-      proxyBase
-    });
+    const [movieResult, subtitles] = await Promise.all([
+      resolveMovieBoxStream({
+        tmdbId,
+        type,
+        season,
+        episode,
+        title,
+        year,
+        dubId,
+        proxyBase
+      }),
+      fetchMovieSubtitles({ tmdbId, type, season, episode, imdbId, proxyBase }).catch(() => [])
+    ]);
 
     const embedServers = getEmbedServers(tmdbId, type, season, episode);
 
     return res.json({
       ...movieResult,
+      subtitles: (movieResult.subtitles?.length ? movieResult.subtitles : subtitles) || [],
       embedServers
     });
   } catch (err) {
     console.warn(`MovieBox stream local resolve error for "${title}":`, err.message);
+    const subtitles = await fetchMovieSubtitles({ tmdbId, type, season, episode, imdbId, proxyBase }).catch(() => []);
     try {
       const qs = new URLSearchParams({
         id: String(tmdbId || 0),
@@ -237,6 +304,7 @@ app.get('/api/movies/stream', async (req, res) => {
           const embedServers = getEmbedServers(tmdbId, type, season, episode);
           return res.json({
             ...cfData,
+            subtitles: (cfData.subtitles?.length ? cfData.subtitles : subtitles) || [],
             embedServers
           });
         }
@@ -249,7 +317,9 @@ app.get('/api/movies/stream', async (req, res) => {
       success: false,
       error: err.message || 'MovieBox stream currently unavailable',
       server: 'MovieBox',
-      embedServers
+      subtitles,
+      embedServers,
+      streams: []
     });
   }
 });
