@@ -1,12 +1,3 @@
----
-title: Zenkai Movies
-emoji: 🎬
-colorFrom: red
-colorTo: gray
-sdk: gradio
-app_file: app.py
----
-
 # 🎬 Zenkai Movies & MovieBox Stream Proxy
 
 A modern full-stack Movie & TV streaming web application with a high-performance MovieBox 4K stream resolver and media proxy with Range request forwarding and HTTP 428/429 bypass protection.
