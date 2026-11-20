@@ -399,19 +399,39 @@ app.get('/proxy', async (req, res) => {
         return doRequest(altHeaders, true);
       }
 
+      const isDownload = req.query.dl === '1' || req.query.download === '1';
+
       const responseHeaders = {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
         'Access-Control-Allow-Headers': '*',
-        'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Content-Type, Accept-Ranges, ETag, Last-Modified',
+        'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Content-Type, Accept-Ranges, ETag, Last-Modified, Content-Disposition',
         'Accept-Ranges': upstreamRes.headers['accept-ranges'] || 'bytes',
-        'Content-Type': upstreamRes.headers['content-type'] || 'video/mp4',
+        'Content-Type': isDownload ? 'application/octet-stream' : (upstreamRes.headers['content-type'] || 'video/mp4'),
         'Connection': 'keep-alive',
       };
       if (upstreamRes.headers['content-length']) responseHeaders['Content-Length'] = upstreamRes.headers['content-length'];
       if (upstreamRes.headers['content-range']) responseHeaders['Content-Range'] = upstreamRes.headers['content-range'];
       if (upstreamRes.headers['etag']) responseHeaders['ETag'] = upstreamRes.headers['etag'];
       if (upstreamRes.headers['last-modified']) responseHeaders['Last-Modified'] = upstreamRes.headers['last-modified'];
+
+      if (isDownload) {
+        let fn = (req.query.fn || '').toString().trim();
+        if (!fn) {
+          try {
+            const p = new URL(targetUrl).pathname;
+            fn = p.split('/').filter(Boolean).pop() || 'video.mp4';
+          } catch {
+            fn = 'video.mp4';
+          }
+        }
+        if (!/\.(mp4|mkv|webm|m4v|ts)$/i.test(fn)) {
+          fn += '.mp4';
+        }
+        const safeFn = fn.replace(/[^\w\s\-\.\(\)\[\]]/gi, '').trim() || 'video.mp4';
+        const encodedFn = encodeURIComponent(safeFn);
+        responseHeaders['Content-Disposition'] = `attachment; filename="${safeFn.replace(/"/g, '')}"; filename*=UTF-8''${encodedFn}`;
+      }
 
       res.writeHead(upstreamRes.statusCode, responseHeaders);
       if (req.method === 'HEAD') {
